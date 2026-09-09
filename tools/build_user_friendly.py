@@ -63,6 +63,9 @@ FMT_X = '0.00"×"'
 
 LINK_FONT = Font(name="Calibri", size=11, color="0563C1", underline="single")
 
+# Диапазон статусов автотестов на 13_Проверки (строки 4-68 исходные, 71-74 новые)
+CHECK_RANGE = "C4:C74"
+
 
 def h1(ws, cell, text):
     ws[cell] = text
@@ -495,7 +498,7 @@ def improve_inputs_sheet(wb, log):
 # ==========================================================================
 def add_checks_summary(wb, log):
     ws = wb["13_Проверки"]
-    rng = "C4:C68"
+    rng = CHECK_RANGE
     ws["F1"] = "Итог автопроверок"
     ws["F1"].font = Font(bold=True, size=12, color=WHITE)
     ws["F1"].fill = F_RED
@@ -504,6 +507,7 @@ def add_checks_summary(wb, log):
         ("Требует проверки", f'=COUNTIF({rng},"ПРОВЕРИТЬ")'),
         ("Риск плана (не ошибка формул)", f'=COUNTIF({rng},"РИСК ПЛАНА")'),
         ("Сознательное упрощение", f'=COUNTIF({rng},"УПРОЩЕНИЕ")'),
+        ("Двойное премирование", f'=COUNTIF({rng},"ДВОЙНАЯ ПРЕМИЯ")'),
     ]
     for i, (label, formula) in enumerate(rows, start=3):
         ws.cell(i, 6, label).font = Font(size=10)
@@ -511,14 +515,14 @@ def add_checks_summary(wb, log):
         c.font = Font(bold=True, size=11)
         c.number_format = "0"
         c.border = BOX
-    ws["F8"] = "Статус"
+    ws["F9"] = "Статус"
     ws["F8"].font = Font(bold=True)
-    ws["G8"] = ('=IF(G4=0,"Модель сходится",'
+    ws["G9"] = ('=IF(G4=0,"Модель сходится",'
                 '"Есть расхождения — смотри строки со статусом ПРОВЕРИТЬ")')
-    ws["G8"].font = Font(bold=True)
-    ws["F10"] = ("«РИСК ПЛАНА» и «УПРОЩЕНИЕ» — это не поломка формул, "
+    ws["G9"].font = Font(bold=True)
+    ws["F11"] = ("«РИСК ПЛАНА» и «УПРОЩЕНИЕ» — это не поломка формул, "
                  "а честно показанные ограничения плана.")
-    ws["F10"].font = Font(size=9, italic=True, color="606060")
+    ws["F11"].font = Font(size=9, italic=True, color="606060")
     ws.column_dimensions["F"].width = 34
     ws.column_dimensions["G"].width = 46
 
@@ -539,7 +543,7 @@ def add_checks_summary(wb, log):
         operator="equal", formula=['"OK"'],
         fill=PatternFill("solid", bgColor="E2EFDA"),
         font=Font(color="375623")))
-    ws.conditional_formatting.add("G4", CellIsRule(
+    ws.conditional_formatting.add("G4:G7", CellIsRule(
         operator="greaterThan", formula=["0"],
         fill=PatternFill("solid", bgColor="F4CCCC"),
         font=Font(bold=True, color="9C0006")))
@@ -1225,6 +1229,11 @@ TRACE = [
      "4% считается как gross, взносы 30% начисляются СВЕРХУ. "
      "Стоимость компании 5,2% базы вместо 4,0% по ТЗ",
      "'08_ФОТ'!A17", DEV),
+    ("6.4", "Отдельные схемы не должны давать двойную премию "
+     "за одни и те же продажи",
+     "При продажах ≥ 5 срабатывают ОБА: Евгению 4% и продавцу 5% "
+     "с одной и той же паушальной выручки. Это 28 месяцев из 60",
+     "'13_Проверки'!A71", DEV),
     ("6.4", "При 5+ продажах временный продавец: 80 тыс. на руки + 5%, "
      "налоги аналогично. Временный подрядчик",
      "Статус ИП: 80 000 + 5% базы, взносов нет — соответствует ТЗ. "
@@ -1268,6 +1277,11 @@ TRACE = [
      "'01_Вводные'!B58", NOTZ),
 
     ("9", "Лагеря", None, None, None),
+    ("9", "ОТКЛЮЧЕНО по запросу 09.09.2026",
+     "01_Вводные!B241 = «Нет». Блок посчитан и сохранён, но обнулён: "
+     "выручка, EBITDA, поступления и оплаты лагерей = 0. "
+     "Вернуть одним переключателем",
+     "'01_Вводные'!B241", NOTZ),
     ("9", "Лагеря в июне, 2 смены по 100 человек",
      "2 смены; 50 без проживания + 50 с проживанием = 100 чел./смена",
      "'01_Вводные'!B161", OK),
@@ -1366,7 +1380,7 @@ def build_trace_sheet(wb, log):
         r += 1
 
     r += 1
-    h2(ws, f"A{r}", "Два отклонения — решение за вами, модель не тронута")
+    h2(ws, f"A{r}", "Открытые решения — цифры не менялись, жду ответа")
     r += 1
     for title, text in [
         ("Стартовые юрлица: 49 в ТЗ против 51 в модели",
@@ -1375,6 +1389,15 @@ def build_trace_sheet(wb, log):
          "Похоже, ТЗ писалось раньше и цифра устарела — но подтвердить нужно "
          "явно. Правится в 01_Вводные!B10; вместе с ним придётся поправить "
          "и автотест."),
+        ("Двойная премия: 4% + 5% с одной и той же выручки",
+         "ТЗ 6.4 и прямая просьба 09.09.2026: «хочу исключить двойную премию, "
+         "чтобы за одни и те же продажи не было для Жени 4% и для этого "
+         "менеджера 5%». Сейчас двойная премия ЕСТЬ: премия Евгения "
+         "срабатывает от 2 продаж, временный продавец — от 5, и в месяцах "
+         "с 5+ продажами обе начисляются на одну и ту же паушальную выручку. "
+         "Это 28 месяцев из 60 и около 18 млн ₽ премий за горизонт. "
+         "Нужно решить, как делить базу: см. три варианта в "
+         "docs/Ответы_на_разбор_09.09.2026.md"),
         ("Премия Евгения: 5,2% стоимости вместо 4,0% по ТЗ",
          "ТЗ v6.0 п.6.4: «премия 4% от суммы паушальных взносов этого месяца. "
          "Вычитать из этой выручки ндс, фсс, ндфл., т.е. на руки получит 4% "
@@ -1393,7 +1416,7 @@ def build_trace_sheet(wb, log):
         d = ws.cell(r, 3, text)
         d.font = Font(size=10, color="404040")
         d.alignment = Alignment(wrap_text=True, vertical="top")
-        ws.row_dimensions[r].height = 92
+        ws.row_dimensions[r].height = 104
         r += 1
 
     r += 1
@@ -1426,6 +1449,117 @@ def build_trace_sheet(wb, log):
     log.append(f"создан лист 14а_Сверка_с_ТЗ: {len(TRACE)} строк трассировки, "
                f"{counts[OK]} соответствий, {counts[DEV]} отклонения")
     return ws
+
+# ==========================================================================
+# 13. Правки по разбору Романа и Виктории от 09.09.2026
+# ==========================================================================
+# Здесь — ЕДИНСТВЕННОЕ место, где меняются значения существующих ячеек.
+# Каждая правка либо прямо запрошена, либо исправляет подпись, которая
+# противоречит параметру. Все они перечислены в ANSWER_EDITS и попадают
+# в отчёт сверки отдельным списком.
+
+# Подписи ставок роялти зашивали даты, которые на самом деле живут
+# в B244/B245: поменяешь дату — подпись соврёт. Делаем их следящими.
+DATE_LABELS = {
+    "A55": ('="Роялти старых / продаж до "&TEXT(DAY($B$244),"00")&"."'
+            '&TEXT(MONTH($B$244),"00")&"."&YEAR($B$244)'),
+    "A56": ('="Роялти новых с "&TEXT(DAY($B$244+1),"00")&"."'
+            '&TEXT(MONTH($B$244+1),"00")&"."&YEAR($B$244+1)'),
+    "A57": ('="Роялти всех с "&TEXT(DAY($B$245),"00")&"."'
+            '&TEXT(MONTH($B$245),"00")&"."&YEAR($B$245)'),
+}
+
+ANSWER_EDITS = [
+    ("01_Вводные", "B241", "Нет",
+     "Запрошено 09.09.2026: «давай пока базовую без лагеря». Переключатель "
+     "штатный — обнуляет продажи, начисления и все оплаты лагерей. "
+     "Вернуть: поставить «Да»."),
+]
+
+
+def apply_answers(wb, log):
+    v = wb["01_Вводные"]
+
+    # -- 1. Лагеря выключены по запросу --------------------------------
+    for sheet, coord, value, _why in ANSWER_EDITS:
+        old = wb[sheet][coord].value
+        wb[sheet][coord] = value
+        log.append(f"ЗНАЧЕНИЕ {sheet}!{coord}: {old!r} -> {value!r} (по запросу)")
+
+    # видно на самом листе лагерей, что он отключён
+    lag = wb["09_Лагеря"]
+    lag["A2"] = ('="Статус блока: "&IF(\'01_Вводные\'!$B$241="Да",'
+                 '"ВКЛЮЧЁН — лагеря участвуют в выручке, EBITDA и деньгах",'
+                 '"ОТКЛЮЧЁН — все строки ниже обнулены. Включить: 01_Вводные!B241 = Да")')
+    lag["A2"].font = Font(bold=True, size=11, color="9C0006")
+    lag["A2"].fill = PatternFill("solid", fgColor="FFF2CC")
+
+    # -- 2. Подписи ставок роялти следуют за датами --------------------
+    for coord, formula in DATE_LABELS.items():
+        old = v[coord].value
+        v[coord] = formula
+        log.append(f"ПОДПИСЬ 01_Вводные!{coord}: {old!r} -> следует за B244/B245")
+    v["E57"] = "Дата перехода задаётся в B245; подпись слева следует за ней."
+    v["E57"].font = Font(size=10, color="606060")
+
+    # -- 3. Почему B59 и B76 НЕ должны быть связаны --------------------
+    # Оба 35%, но базы разные: доля от выручки против доли от прибыли.
+    v["F59"] = ("35% выручки. Не связано с B76: там 35% ПРИБЫЛИ мерча. "
+                "Совпадение ставок случайно — пересмотр одной не двигает другую.")
+    v["F76"] = ("35% прибыли (выручка − COGS − логистика). Не связано с B59: "
+                "там 35% ВЫРУЧКИ по паушальным. Базы разные.")
+    for coord in ("F59", "F76"):
+        v[coord].font = Font(size=9, italic=True, color="808080")
+        v[coord].alignment = Alignment(wrap_text=True, vertical="top")
+
+    log.append("01_Вводные: пояснено, почему B59 и B76 намеренно не связаны")
+
+
+def add_answer_checks(wb, log):
+    """Новые автотесты ниже занятых строк 13_Проверки — структуру не двигаем."""
+    ws = wb["13_Проверки"]
+    ws["A70"] = "Дополнительные проверки по разбору 09.09.2026"
+    ws["A70"].font = Font(bold=True, size=12, color=WHITE)
+    ws["A70"].fill = F_RED
+
+    rows = [
+        (71, "Двойное премирование: месяцев с 4% и 5% одновременно",
+         '=SUMPRODUCT(--(\'04_Продажи\'!$B$15:$BI$15>=\'01_Вводные\'!$B$126))',
+         '=IF(B71=0,"OK","ДВОЙНАЯ ПРЕМИЯ")',
+         "При продажах ≥ 5 Евгений получает 4%, а временный продавец 5% "
+         "с ОДНОЙ И ТОЙ ЖЕ паушальной выручки. Решение по разделению баз "
+         "не принято — см. 14а_Сверка_с_ТЗ."),
+        (72, "Лагеря включены в расчёт",
+         '=IF(\'01_Вводные\'!$B$241="Да",1,0)',
+         '=IF(B72=1,"ВКЛЮЧЕНЫ","ОТКЛЮЧЕНЫ")',
+         "Отключено по запросу 09.09.2026. Вернуть: 01_Вводные!B241 = Да."),
+        (73, "Выручка лагерей при отключении = 0",
+         "=SUM('09_Лагеря'!B10:BI10)",
+         '=IF(ABS(B73)<0.01,"OK","ПРОВЕРИТЬ")',
+         "Контроль, что переключатель действительно обнуляет блок."),
+        (74, "Деньги лагерей при отключении = 0",
+         "=SUM('09_Лагеря'!B8:BI8)+SUM('09_Лагеря'!B19:BI19)",
+         '=IF(ABS(B74)<0.01,"OK","ПРОВЕРИТЬ")',
+         "Ни поступлений, ни оплат."),
+    ]
+    for r, name, formula, status, note in rows:
+        ws.cell(r, 1, name).font = Font(size=11)
+        ws.cell(r, 2, formula).number_format = FMT_MONEY
+        ws.cell(r, 3, status).font = Font(bold=True)
+        n = ws.cell(r, 4, note)
+        n.font = Font(size=10, color="404040")
+        n.alignment = Alignment(wrap_text=True, vertical="top")
+        ws.row_dimensions[r].height = 30
+
+    ws.conditional_formatting.add("C71:C74", CellIsRule(
+        operator="equal", formula=['"ДВОЙНАЯ ПРЕМИЯ"'],
+        fill=PatternFill("solid", bgColor="F4CCCC"),
+        font=Font(bold=True, color="9C0006")))
+    ws.conditional_formatting.add("C71:C74", CellIsRule(
+        operator="equal", formula=['"ОТКЛЮЧЕНЫ"'],
+        fill=PatternFill("solid", bgColor="FFF2CC"),
+        font=Font(bold=True, color="7F6000")))
+    log.append("13_Проверки: 4 новых теста (двойная премия, статус лагерей)")
 
 
 # ==========================================================================
@@ -1522,13 +1656,14 @@ def snapshot(path):
     return snap
 
 
-def verify(before, after, new_sheets, allowed_new_cells, log):
-    changed, removed = [], []
+def verify(before, after, new_sheets, allowed_new_cells, intentional, log):
+    changed, removed, planned = [], [], []
     for key, val in before.items():
         if key not in after:
             removed.append(key)
         elif after[key] != val:
-            changed.append((key, val, after[key]))
+            (planned if key in intentional else changed).append(
+                (key, val, after[key]))
     added = [k for k in after
              if k not in before and k[0] not in new_sheets
              and k not in allowed_new_cells]
@@ -1537,7 +1672,10 @@ def verify(before, after, new_sheets, allowed_new_cells, log):
     print("КОНТРОЛЬ: изменилась ли экономика")
     print("=" * 74)
     print(f"  ячеек в исходнике                : {len(before):,}")
-    print(f"  изменённых формул/значений       : {len(changed)}")
+    print(f"  намеренных правок (по запросу)   : {len(planned)}")
+    for key, old, new in planned:
+        print(f"    ~ {key[0]}!{key[1]}: {str(old)[:34]} -> {str(new)[:34]}")
+    print(f"  НЕзапланированных изменений      : {len(changed)}")
     print(f"  удалённых ячеек                  : {len(removed)}")
     print(f"  новых ячеек вне новых листов     : {len(added)}")
     for key, old, new in changed[:20]:
@@ -1547,7 +1685,9 @@ def verify(before, after, new_sheets, allowed_new_cells, log):
     for key in added[:20]:
         print(f"    + новое {key[0]}!{key[1]} = {str(after[key])[:50]}")
     ok = not changed and not removed and not added
-    print(f"\n  ИТОГ: {'экономика не тронута' if ok else 'ЕСТЬ ОТЛИЧИЯ — СМОТРИ ВЫШЕ'}")
+    verdict = ("кроме перечисленных правок по запросу — ничего не тронуто"
+               if ok else "ЕСТЬ НЕЗАПЛАНИРОВАННЫЕ ОТЛИЧИЯ — СМОТРИ ВЫШЕ")
+    print(f"\n  ИТОГ: {verdict}")
     return ok
 
 
@@ -1568,6 +1708,8 @@ def main():
     add_checks_summary(wb, log)
     add_dashboard_status(wb, log)
     extend_instruction_sheet(wb, log)
+    apply_answers(wb, log)
+    add_answer_checks(wb, log)
     add_input_guards(wb, log)
     setup_printing(wb, log)
 
@@ -1604,7 +1746,19 @@ def main():
         allowed.add(("00_Дашборд", f"G{r}"))
         allowed.add(("00_Дашборд", f"H{r}"))
 
-    ok = verify(snapshot(SRC), snapshot(DST), new_sheets, allowed, log)
+    intentional = {("01_Вводные", c) for c in
+                   list(DATE_LABELS) + [e[1] for e in ANSWER_EDITS]}
+    for coord in ["E57", "F59", "F76"]:
+        allowed.add(("01_Вводные", coord))
+    allowed.add(("09_Лагеря", "A2"))
+    for r in range(70, 75):
+        for col in "ABCD":
+            allowed.add(("13_Проверки", f"{col}{r}"))
+    for r in (9, 11):
+        allowed.add(("13_Проверки", f"F{r}"))
+        allowed.add(("13_Проверки", f"G{r}"))
+    ok = verify(snapshot(SRC), snapshot(DST), new_sheets, allowed,
+                intentional, log)
     print(f"\nФайл: {DST}")
     return 0 if ok else 1
 
