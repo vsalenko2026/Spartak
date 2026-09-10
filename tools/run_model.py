@@ -30,6 +30,7 @@ ROOT = Path(__file__).resolve().parent.parent
 DEFAULT_MODEL = ROOT / "model" / "Spartak_V8_9_понятная.xlsx"
 BUILD = ROOT / "build"
 RUNS = BUILD / "runs"
+RECALC = BUILD / "recalc"
 LO_PROFILE = BUILD / "lo_profile"
 
 SCENARIO_CELL = "01_Вводные!B192"
@@ -175,7 +176,7 @@ def read_scenario_no(path: Path):
     return wb[sheet][addr].value if sheet in wb.sheetnames else None
 
 
-def do_run(model: Path, overrides: dict, tag: str):
+def do_run(model: Path, overrides: dict, tag: str, keep: bool = False):
     RUNS.mkdir(parents=True, exist_ok=True)
     BUILD.mkdir(exist_ok=True)
     started = datetime.now()
@@ -189,6 +190,11 @@ def do_run(model: Path, overrides: dict, tag: str):
         done = recalc(staged, work)
         blocks, errors = grab(done)
         scenario_no = read_scenario_no(done)
+        kept = None
+        if keep:
+            RECALC.mkdir(parents=True, exist_ok=True)
+            kept = RECALC / f"{tag}.xlsx"
+            shutil.copy2(done, kept)
 
     snapshot = {
         "tag": tag,
@@ -218,7 +224,9 @@ def do_run(model: Path, overrides: dict, tag: str):
         print(f"\nЛИСТ ПРОВЕРОК — не пройдено ({len(bad)}):")
         for b in bad[:20]:
             print(b)
-    print(f"\nсрез: {path.relative_to(ROOT)}")
+    if kept:
+        print(f"пересчитанная книга: {kept.relative_to(ROOT)}")
+    print(f"срез: {path.relative_to(ROOT)}")
     return snapshot
 
 
@@ -253,6 +261,9 @@ def main():
                     metavar="Лист!Ячейка=знач", help="подставить вводную")
     ap.add_argument("--scenario", choices=list(SCENARIOS), help="переключить сценарий")
     ap.add_argument("--tag", help="имя прогона (файл build/runs/<тег>.json)")
+    ap.add_argument("--keep", action="store_true",
+                    help="сохранить пересчитанную книгу в build/recalc/<тег>.xlsx "
+                         "— в ней, в отличие от исходника, есть значения формул")
     ap.add_argument("--compare", nargs=2, metavar=("A", "B"), help="сравнить два прогона")
     a = ap.parse_args()
 
@@ -277,7 +288,7 @@ def main():
         overrides[k.strip()] = v
 
     tag = a.tag or (a.scenario if a.scenario else "база")
-    snap = do_run(model, overrides, tag)
+    snap = do_run(model, overrides, tag, keep=a.keep)
     if a.scenario:
         want = SCENARIOS[a.scenario][1]
         got = snap.get("scenario_no")
