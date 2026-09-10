@@ -11,7 +11,36 @@ sources/                          ТЗ v6.0 и фактические отчёт
 docs/Что_изменилось.md            подробный разбор всех правок
 docs/Сверка_с_ТЗ_и_источниками.md сверка модели с ТЗ и фактом
 docs/Ответы_на_разбор_09.09.2026.md ответы на вопросы Романа и Виктории
+docs/Журнал_правок.md             что менялось в модели и с каким эффектом
 ```
+
+## Как проверить модель, не открывая Excel
+
+```bash
+python3 tools/run_model.py --tag база --keep      # пересчёт всей книги, ~12 с
+python3 tools/extract_model.py --model build/recalc/база.xlsx   # карта модели
+python3 tools/audit_model.py                      # восемь статических проверок
+python3 -m pytest tests -q                        # 38 тестов экономики
+python3 tools/baseline.py                         # сверка ключевых цифр с эталоном
+```
+
+Отдельные вопросы к модели:
+
+```bash
+python3 tools/extract_model.py --cell 02_Модель!B44   # формула и все её связи
+python3 tools/extract_model.py --grep "роялти"        # где встречается
+python3 tools/run_model.py --set '01_Вводные!B58=0.07' --tag проба
+python3 tools/run_model.py --compare база проба       # построчная дельта
+python3 tools/selfcheck.py                            # ловят ли тесты ошибки
+```
+
+Формулы считает LibreOffice Calc: openpyxl их не вычисляет. Нужен пакет
+`libreoffice-calc`, без него книга просто не откроется.
+
+В Claude Code работает команда `/finmodel` и четыре роли:
+`finmodel-auditor` ищет ошибки, `finmodel-tester` считает «что будет,
+если», `finmodel-economist` судит реалистичность, `finmodel-builder`
+вносит правки. Правила и контракт правки — в `CLAUDE.md`.
 
 ## Главное правило
 
