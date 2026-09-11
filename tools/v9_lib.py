@@ -27,7 +27,10 @@ WHITE = "FFFFFF"
 КОЛ_ИТОГО = 10         # J
 КОЛ_МЕС1 = 12          # L
 ЛЕТ = 5
-МЕСЯЦЕВ = 60
+МЕСЯЦЕВ = 60            # горизонт, который показываем и суммируем
+ХВОСТ = 6               # технические месяцы за горизонтом: по ним считается
+                        # целевой запас склада на будущие продажи
+ВСЕГО_МЕСЯЦЕВ = МЕСЯЦЕВ + ХВОСТ
 
 ДЕНЬГИ = '# ##0;[Red]-# ##0;-'
 ДЕНЬГИ_МЛН = '# ##0,0;[Red]-# ##0,0;-'
@@ -78,8 +81,10 @@ class Лист:
             ws.column_dimensions[L(КОЛ_ГОД1 + y)].width = 15
         ws.column_dimensions[L(КОЛ_ИТОГО)].width = 16
         ws.column_dimensions[L(КОЛ_ИТОГО + 1)].width = 3
-        for i in range(1, МЕСЯЦЕВ + 1):
+        for i in range(1, ВСЕГО_МЕСЯЦЕВ + 1):
             ws.column_dimensions[мес(i)].width = 13
+            if i > МЕСЯЦЕВ:                      # хвост скрыт: он технический
+                ws.column_dimensions[мес(i)].hidden = True
 
     def шапка(self, дата_строка=None):
         """Строка заголовков: годы и месяцы."""
@@ -90,14 +95,17 @@ class Лист:
         for y in range(1, ЛЕТ + 1):
             ws[f"{год(y)}{r}"] = f"Год {y}"
         ws[f"{L(КОЛ_ИТОГО)}{r}"] = "Итого 5 лет"
-        for i in range(1, МЕСЯЦЕВ + 1):
+        for i in range(1, ВСЕГО_МЕСЯЦЕВ + 1):
             c = мес(i)
+            if i > МЕСЯЦЕВ:
+                ws[f"{c}{r}"] = f"тех. {i - МЕСЯЦЕВ}"
+                continue
             if дата_строка:
                 ws[f"{c}{r}"] = f"={дата_строка}!{c}$4"
                 ws[f"{c}{r}"].number_format = ДАТА
             else:
                 ws[f"{c}{r}"] = f"М{i}"
-        for col in range(2, КОЛ_МЕС1 + МЕСЯЦЕВ):
+        for col in range(2, КОЛ_МЕС1 + ВСЕГО_МЕСЯЦЕВ):
             c = ws.cell(row=r, column=col)
             c.font = Font(bold=True, color=WHITE, size=10)
             c.fill = PatternFill("solid", fgColor=RED)
@@ -113,7 +121,7 @@ class Лист:
         ws[f"B{r}"] = название
         ws[f"B{r}"].font = Font(bold=True, size=11, color=RED)
         ws[f"B{r}"].fill = PatternFill("solid", fgColor=YELLOW)
-        for col in range(2, КОЛ_МЕС1 + МЕСЯЦЕВ):
+        for col in range(2, КОЛ_МЕС1 + ВСЕГО_МЕСЯЦЕВ):
             ws.cell(row=r, column=col).fill = PatternFill("solid", fgColor=YELLOW)
         self.строка += 1
         return r
@@ -130,7 +138,7 @@ class Лист:
         ws[f"D{r}"] = как
         ws[f"D{r}"].font = Font(italic=True, size=9, color="595959")
         ws[f"D{r}"].alignment = Alignment(wrap_text=True, vertical="top")
-        for i in range(1, МЕСЯЦЕВ + 1):
+        for i in range(1, ВСЕГО_МЕСЯЦЕВ + 1):
             c = мес(i)
             ш = первый if (i == 1 and первый is not None) else формула
             if ш is None:
@@ -138,6 +146,9 @@ class Лист:
             знач = ш.format(м=c, пред=мес(i - 1) if i > 1 else None,
                             пред2=мес(i - 2) if i > 2 else None,
                             пред3=мес(i - 3) if i > 3 else None,
+                            **{f"след{k}": (мес(i + k) if i + k <= ВСЕГО_МЕСЯЦЕВ
+                                            else мес(ВСЕГО_МЕСЯЦЕВ))
+                               for k in range(1, 7)},
                             т=тариф(i), тпред=тариф(i - 1) if i > 1 else None,
                             i=i, r=r)
             ws[f"{c}{r}"] = знач if str(знач).startswith("=") else знач
@@ -159,7 +170,7 @@ class Лист:
         ws[f"{L(КОЛ_ИТОГО)}{r}"].number_format = формат
         if жирный:
             for col in list(range(2, КОЛ_ИТОГО + 1)) + \
-                       list(range(КОЛ_МЕС1, КОЛ_МЕС1 + МЕСЯЦЕВ)):
+                       list(range(КОЛ_МЕС1, КОЛ_МЕС1 + ВСЕГО_МЕСЯЦЕВ)):
                 ws.cell(row=r, column=col).font = Font(bold=True)
         for y in range(ЛЕТ):
             ws.cell(row=r, column=КОЛ_ГОД1 + y).fill = PatternFill("solid", fgColor=GREY)
