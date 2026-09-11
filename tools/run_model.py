@@ -175,7 +175,9 @@ def checks_summary(snapshot):
     rows = snapshot["blocks"].get("проверки", {}).get("rows", {})
     bad = []
     for r, rec in sorted(rows.items(), key=lambda kv: int(kv[0])):
-        for v in rec["v"]:
+        # статус живёт в колонке C; дальше идут пояснения, и в них слово
+        # «ПРОВЕРИТЬ» встречается как часть подсказки, а не как вердикт
+        for v in rec["v"][:3]:
             if isinstance(v, str) and re.search(r"провал|ПРОВЕРИТЬ|FAIL|ошибк", v, re.I):
                 bad.append(f"   строка {r}: {rec['label'][:70]} → {v}")
                 break
