@@ -20,9 +20,16 @@ REL = 1e-6         # относительный допуск
 
 
 def ensure_run(tag: str, args=()):
+    """Срез прогона; считается на месте, если его ещё нет.
+
+    SPARTAK_MODEL подменяет саму книгу — этим пользуется tools/selfcheck.py,
+    чтобы прогнать против намеренно испорченной модели не только базовый
+    срез, но и производные от него (например, прогон с другой датой старта)."""
     path = RUNS / f"{tag}.json"
     if not path.exists():
-        cmd = [sys.executable, str(ROOT / "tools" / "run_model.py"), "--tag", tag, *args]
+        модель = os.environ.get("SPARTAK_MODEL")
+        cmd = [sys.executable, str(ROOT / "tools" / "run_model.py"), "--tag", tag,
+               *(["--model", модель] if модель else []), *args]
         res = subprocess.run(cmd, capture_output=True, text=True, timeout=2400)
         if not path.exists():
             pytest.fail(f"не удалось прогнать модель «{tag}»:\n"

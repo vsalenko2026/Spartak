@@ -66,6 +66,17 @@ DEFECTS = {
          for c in СТОЛБЦЫ_МЕСЯЦЕВ},
         ["test_фикс_берётся_с_точки_начисления_а_не_со_школы"],
     ),
+    "календарь": (
+        "веса плана продаж снова берутся по номеру месяца в сезоне",
+        {f"04_Продажи!{get_column_letter(c)}15":
+         (f"='01_Вводные'!$B${35 + min(5, (c - 2) // 12 + 1)}"
+          f"*'01_Вводные'!${get_column_letter(3 + (c - 2) % 12)}"
+          f"${35 + min(5, (c - 2) // 12 + 1)}"
+          f"/SUM('01_Вводные'!$C${35 + min(5, (c - 2) // 12 + 1)}"
+          f":$N${35 + min(5, (c - 2) // 12 + 1)})")
+         for c in range(2, 62)},
+        ["test_пик_продаж_стоит_на_сентябре_а_не_на_первом_месяце"],
+    ),
     "разом": (
         "формула открытий вернулась к «весь коэффициент в один месяц»",
         {f"06_Сеть_и_дети!{get_column_letter(c)}8":
@@ -110,9 +121,13 @@ def run_model(model: Path, tag: str):
                            f"\n{res.stderr[-1500:]}")
 
 
-def run_tests(tag: str):
-    """Тесты против подменённого среза. Возвращает множество упавших тестов."""
-    env = dict(os.environ, SPARTAK_BASE_TAG=tag)
+def run_tests(tag: str, model: Path):
+    """Тесты против подменённого среза. Возвращает множество упавших тестов.
+
+    SPARTAK_MODEL нужен тестам, которые считают собственный прогон
+    (например, с другой датой старта): без него они посчитались бы с
+    целой модели и дефект бы не увидели."""
+    env = dict(os.environ, SPARTAK_BASE_TAG=tag, SPARTAK_MODEL=str(model))
     res = subprocess.run(
         [sys.executable, "-m", "pytest", str(ROOT / "tests"), "-q", "--no-header",
          "-p", "no:cacheprovider", "--tb=no"],
@@ -144,7 +159,7 @@ def main():
         tag = f"дефект_{name}"
         model = build_mutant(name, edits)
         run_model(model, tag)
-        failed, out = run_tests(tag)
+        failed, out = run_tests(tag, model)
         missed = [t for t in expect if t not in failed]
         if missed:
             ok = False
@@ -161,7 +176,8 @@ def main():
         print("ЕСТЬ ДЫРЫ: часть дефектов проходит мимо тестов")
     # чистим срезы дефектов, чтобы не путались с настоящими прогонами
     for name in names:
-        (ROOT / "build" / "runs" / f"дефект_{name}.json").unlink(missing_ok=True)
+        for срез in (ROOT / "build" / "runs").glob(f"дефект_{name}*.json"):
+            срез.unlink(missing_ok=True)
     shutil.rmtree(MUTANTS, ignore_errors=True)
     return 0 if ok else 1
 

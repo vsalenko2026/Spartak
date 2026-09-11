@@ -66,6 +66,23 @@ GRAB = {
 }
 
 
+def разобрать_значение(v: str):
+    """Текст из --set в то, чем он на самом деле является.
+
+    Дату обязательно надо положить датой, а не строкой: LibreOffice текст
+    в дату приводит, но не везде одинаково, и прогон расходится с тем же
+    прогоном без подстановки."""
+    t = v.strip()
+    if re.fullmatch(r"\d{4}-\d{2}-\d{2}", t):
+        return datetime.strptime(t, "%Y-%m-%d")
+    if re.fullmatch(r"\d{2}\.\d{2}\.\d{4}", t):
+        return datetime.strptime(t, "%d.%m.%Y")
+    try:
+        return int(t) if re.fullmatch(r"-?\d+", t) else float(t.replace(",", "."))
+    except ValueError:
+        return v
+
+
 class RecalcError(RuntimeError):
     pass
 
@@ -229,7 +246,10 @@ def do_run(model: Path, overrides: dict, tag: str, keep: bool = False):
         "scenario_no": scenario_no,
         "inputs": inputs,
         "model": str(model.relative_to(ROOT)),
-        "overrides": {k: v for k, v in overrides.items()},
+        # даты в срезе — строкой: JSON про datetime не знает, а срез
+        # должен читаться и через полгода
+        "overrides": {k: (v.strftime("%Y-%m-%d") if hasattr(v, "strftime") else v)
+                      for k, v in overrides.items()},
         "started": started.isoformat(timespec="seconds"),
         "seconds": round((datetime.now() - started).total_seconds(), 1),
         "cell_errors": errors,
@@ -313,11 +333,7 @@ def main():
         if "=" not in item:
             sys.exit(f"--set нужно вида Лист!Ячейка=значение, получено {item!r}")
         k, v = item.split("=", 1)
-        try:
-            v = int(v) if re.fullmatch(r"-?\d+", v.strip()) else float(v.replace(",", "."))
-        except ValueError:
-            pass
-        overrides[k.strip()] = v
+        overrides[k.strip()] = разобрать_значение(v)
 
     tag = a.tag or (a.scenario if a.scenario else "база")
     snap = do_run(model, overrides, tag, keep=a.keep)
