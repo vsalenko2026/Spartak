@@ -1015,7 +1015,8 @@ def построить_дашборд(wb, сеть, доходы, расходы
     ws["H2"].fill = PatternFill("solid", fgColor=V.GREEN)
     ws["H2"].alignment = Alignment(horizontal="center")
     ws["I2"] = "переключить →"
-    ws["I2"].hyperlink = "#'01_Вводные'!B322"
+    from openpyxl.worksheet.hyperlink import Hyperlink
+    ws["I2"].hyperlink = Hyperlink(ref="I2", location="'01_Вводные'!B322")
     ws["I2"].font = Font(size=9, color="0563C1", underline="single")
     ws["G3"] = ('=IF(УчитыватьИсторию="Да",'
                 '"колонка слева — факт сезона, итог справа считает и его",'
