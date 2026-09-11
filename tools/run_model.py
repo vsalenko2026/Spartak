@@ -41,6 +41,19 @@ SCENARIOS = {"негативный": ("Негативный", 1),
              "базовый": ("Базовый", 2),
              "позитивный": ("Позитивный", 3)}
 
+# Вводные, которые кладём в срез: по ним тесты понимают, в каком режиме
+# считалась модель, и проверяют, что режим действительно применился.
+KEY_INPUTS = {
+    "закрытие_в_год": ("01_Вводные", "B13"),
+    "коэфф_сохранения": ("01_Вводные", "B14"),
+    "лаг_открытия": ("01_Вводные", "B15"),
+    "школ_на_партнёра": ("01_Вводные", "B22"),
+    "целевой_запас_мес": ("01_Вводные", "B80"),
+    "страховые": ("01_Вводные", "B131"),
+    "каникулы_роялти_мес": ("01_Вводные", "B297"),
+    "конверсия": ("01_Вводные", "B298"),
+}
+
 # что забираем из пересчитанной книги
 GRAB = {
     "модель": ("02_Модель", 5, 80, 2, 61),        # драйверы, БДР, БДДС помесячно
@@ -169,6 +182,17 @@ def checks_summary(snapshot):
     return bad
 
 
+def read_inputs(path: Path):
+    """Значения ключевых вводных из пересчитанной книги."""
+    wb = openpyxl.load_workbook(path, data_only=True)
+    out = {}
+    for name, (sheet, addr) in KEY_INPUTS.items():
+        if sheet in wb.sheetnames:
+            v = wb[sheet][addr].value
+            out[name] = v if isinstance(v, (int, float, str)) else str(v)
+    return out
+
+
 def read_scenario_no(path: Path):
     """Какой сценарий реально посчитался (по 01_Вводные!B194)."""
     wb = openpyxl.load_workbook(path, data_only=True)
@@ -190,6 +214,7 @@ def do_run(model: Path, overrides: dict, tag: str, keep: bool = False):
         done = recalc(staged, work)
         blocks, errors = grab(done)
         scenario_no = read_scenario_no(done)
+        inputs = read_inputs(done)
         kept = None
         if keep:
             RECALC.mkdir(parents=True, exist_ok=True)
@@ -199,6 +224,7 @@ def do_run(model: Path, overrides: dict, tag: str, keep: bool = False):
     snapshot = {
         "tag": tag,
         "scenario_no": scenario_no,
+        "inputs": inputs,
         "model": str(model.relative_to(ROOT)),
         "overrides": {k: v for k, v in overrides.items()},
         "started": started.isoformat(timespec="seconds"),
@@ -214,6 +240,9 @@ def do_run(model: Path, overrides: dict, tag: str, keep: bool = False):
     print(f"\n--- прогон «{tag}» за {snapshot['seconds']} с ---")
     print(f"посчитан сценарий                  : "
           f"{names.get(scenario_no, '?')} (номер {scenario_no})")
+    print(f"закрытие школ {inputs.get('закрытие_в_год', 0):.0%} в год, "
+          f"запас {inputs.get('целевой_запас_мес', '?')} мес., "
+          f"каникулы роялти {inputs.get('каникулы_роялти_мес', '?')} мес.")
     print(summarize(snapshot))
     if errors:
         print(f"\nОШИБКИ В ЯЧЕЙКАХ: {len(errors)}")
