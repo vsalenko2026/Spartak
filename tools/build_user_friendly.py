@@ -1778,12 +1778,103 @@ def премия_евгения_полная_стоимость(wb, log):
                f"Евгения, взносы внутри — {правок} формул")
 
 
+def защитить_ввод(wb, log):
+    """Выпадающие списки и запрет неверных форматов на листе вводных.
+
+    Тип проверки определяется по единице измерения в колонке C: «Да / Нет»
+    даёт список, «%» — дробь от нуля до единицы, «дата» — дату, «мес.» и
+    «номер месяца» — целое в разумных границах. Это не меняет ни одной
+    цифры, но не даёт вписать «десять» вместо 10 или 6,5 вместо 0,065."""
+    from openpyxl.worksheet.datavalidation import DataValidation
+
+    v = wb["01_Вводные"]
+    правила = {}
+
+    def правило(ключ, **kw):
+        if ключ not in правила:
+            dv = DataValidation(showErrorMessage=True, showInputMessage=True, **kw)
+            v.add_data_validation(dv)
+            правила[ключ] = dv
+        return правила[ключ]
+
+    счёт = {}
+    for row in range(1, v.max_row + 1):
+        b = v.cell(row=row, column=2)
+        ед = str(v.cell(row=row, column=3).value or "").strip()
+        имя = str(v.cell(row=row, column=1).value or "").strip()
+        if b.value is None or (isinstance(b.value, str) and b.value.startswith("=")):
+            continue
+        адрес = f"B{row}"
+
+        if ед == "Да / Нет":
+            dv = правило("данет", type="list", formula1='"Да,Нет"')
+            dv.errorTitle, dv.error = "Только Да или Нет", (
+                "Выберите значение из списка.")
+            dv.promptTitle, dv.prompt = имя[:30], "Да или Нет"
+            вид = "список Да/Нет"
+        elif "Негативный" in str(b.value) or "Базовый" in str(b.value) or \
+                "Позитивный" in str(b.value):
+            dv = правило("сценарий", type="list",
+                         formula1='"Негативный,Базовый,Позитивный"')
+            dv.errorTitle, dv.error = "Только три сценария", (
+                "Выберите негативный, базовый или позитивный.")
+            вид = "список сценариев"
+        elif ед.startswith("%"):
+            dv = правило("процент", type="decimal", operator="between",
+                         formula1="0", formula2="1")
+            dv.errorTitle, dv.error = "Доля, а не проценты", (
+                "Вводите долей: 6,5 % это 0,065. Допустимо от 0 до 1.")
+            dv.promptTitle, dv.prompt = имя[:30], "Долей: 0,065 = 6,5 %"
+            вид = "доля 0…1"
+        elif ед == "дата":
+            dv = правило("дата", type="date", operator="between",
+                         formula1="DATE(2020,1,1)", formula2="DATE(2040,12,31)")
+            dv.errorTitle, dv.error = "Нужна дата", (
+                "Введите дату между 2020 и 2040 годом.")
+            вид = "дата"
+        elif ед == "номер месяца":
+            dv = правило("месяц", type="whole", operator="between",
+                         formula1="1", formula2="12")
+            dv.errorTitle, dv.error = "Номер месяца", (
+                "От 1 (январь) до 12 (декабрь).")
+            вид = "месяц 1…12"
+        elif ед in ("мес.", "мес. будущих продаж", "дней"):
+            dv = правило("срок", type="whole", operator="between",
+                         formula1="0", formula2="120")
+            dv.errorTitle, dv.error = "Целое число", (
+                "Срок задаётся целым числом, от 0 до 120.")
+            вид = "целое 0…120"
+        elif ед in ("шт.", "чел.", "юрлиц/продажу", "школ/продажу",
+                    "компл./ребёнок/сезон", "окладов"):
+            dv = правило("количество", type="decimal", operator="between",
+                         formula1="0", formula2="100000")
+            dv.errorTitle, dv.error = "Количество", (
+                "Введите неотрицательное число.")
+            вид = "число ≥ 0"
+        elif ед.startswith("₽"):
+            dv = правило("деньги", type="decimal", operator="greaterThanOrEqual",
+                         formula1="0")
+            dv.errorTitle, dv.error = "Сумма в рублях", (
+                "Введите сумму числом, без пробелов и знака рубля. "
+                "Отрицательные суммы не принимаются.")
+            вид = "деньги ≥ 0"
+        else:
+            continue
+
+        dv.add(адрес)
+        счёт[вид] = счёт.get(вид, 0) + 1
+
+    итог = ", ".join(f"{k}: {n}" for k, n in sorted(счёт.items()))
+    log.append(f"ВВОД: защищено {sum(счёт.values())} ячеек вводных ({итог})")
+
+
 def apply_answers(wb, log):
     v = wb["01_Вводные"]
     link_schools_per_partner(wb, log)
     clean_dead_rows(wb, log)
     развязать_порог_займа(wb, log)
     премия_евгения_полная_стоимость(wb, log)
+    защитить_ввод(wb, log)
     publish_controls(wb, log)
 
     # -- 1. Лагеря выключены по запросу --------------------------------

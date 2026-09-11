@@ -63,6 +63,8 @@ def копировать_лист(src_ws, dst_ws, переименовать=Non
         dst_ws.row_dimensions[i].height = dim.height
     for rng in src_ws.merged_cells.ranges:
         dst_ws.merge_cells(str(rng))
+    for dv in src_ws.data_validations.dataValidation:
+        dst_ws.add_data_validation(copy(dv))
     dst_ws.sheet_view.showGridLines = src_ws.sheet_view.showGridLines
     dst_ws.freeze_panes = src_ws.freeze_panes
 
