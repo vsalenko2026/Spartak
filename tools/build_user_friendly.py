@@ -1553,9 +1553,95 @@ def link_schools_per_partner(wb, log):
     return правок + хвост
 
 
+# Начала пяти копий расчёта в 19_Расчет_аналитики.
+COPY_STARTS = [338, 1350, 2362, 3374, 4386]
+
+# Строки внутри копии, которые считаются каждый пересчёт, но их результат не
+# читает никто. Смещения — от начала копии (эталон разобран на копии 2,
+# строки 1350-2361).
+DEAD_OFFSETS = {
+    1: "сломанный контроль продаж: ссылки разъехались при протяжке, "
+       "сравнивает движок сам с собой",
+    4: "дубль расчёта новых юрлиц (та же формула строкой ниже, +14)",
+    52: "пустая заготовка",
+    54: "пустая заготовка",
+    62: "пустая заготовка",
+    63: "пустая заготовка",
+    64: "пустая заготовка",
+    65: "пустая заготовка",
+    224: "тавтология: сравнивает ячейку с её же формулой, всегда 0",
+    368: "дубль строки школ",
+}
+# Смещение живого контроля: сумма школ по 25 месяцам жизни против суммы
+# трёх стадий. Он рабочий, но никуда не выводился — публикуем на 13_Проверки.
+COHORT_CHECK_OFFSET = 223
+
+
+def clean_dead_rows(wb, log):
+    """Очищает мёртвые строки во всех копиях движка.
+
+    Содержимое стирается, сами строки остаются на месте: удалять строки
+    нельзя — уедут все ссылки книги. Доказательство безвредности — прогон
+    до и после должен дать пустую таблицу дельт."""
+    ws = wb["19_Расчет_аналитики"]
+    очищено = 0
+    for начало in COPY_STARTS:
+        for смещение in DEAD_OFFSETS:
+            row = начало + смещение
+            if row > ws.max_row:
+                continue
+            for col in range(2, ws.max_column + 1):
+                c = ws.cell(row=row, column=col)
+                if c.value is not None:
+                    c.value = None
+                    очищено += 1
+    log.append(f"УБОРКА 19_Расчет_аналитики: очищено {очищено} мёртвых формул "
+               f"в {len(DEAD_OFFSETS)} строках каждой из {len(COPY_STARTS)} копий")
+    return очищено
+
+
+def publish_controls(wb, log):
+    """Выводит на 13_Проверки то, что движок считал в стол.
+
+    Контроль когорт был живым и правильным, но его результат не читала ни
+    одна ячейка — узнать о расхождении можно было, только открыв ячейку
+    внутри технического листа."""
+    ws = wb["13_Проверки"]
+    строка = 76
+    ws[f"A{строка}"] = "Дополнительные проверки по разбору 11.09.2026"
+    ws[f"A{строка}"].font = Font(bold=True, color=RED)
+    строка += 1
+
+    сценарии = [("негативный", COPY_STARTS[0]), ("базовый", COPY_STARTS[1]),
+                ("позитивный", COPY_STARTS[2])]
+    for имя, начало in сценарии:
+        r = начало + COHORT_CHECK_OFFSET
+        ws[f"A{строка}"] = f"Когорты школ сходятся со стадиями — {имя}"
+        ws[f"B{строка}"] = f"=SUM('19_Расчет_аналитики'!$B${r}:$BI${r})"
+        ws[f"C{строка}"] = f'=IF(ABS(B{строка})<0.01,"OK","ПРОВЕРИТЬ")'
+        ws[f"D{строка}"] = ("Сумма школ по 25 месяцам жизни против суммы трёх "
+                            "стадий (1–12, 13–24, зрелые). Считалось в движке, "
+                            "но никуда не выводилось.")
+        строка += 1
+
+    продажи = ",".join(f"SUM('19_Расчет_аналитики'!$B${n}:$BI${n})"
+                       for _, n in сценарии)
+    ws[f"A{строка}"] = "Продажи движка совпадают с листом продаж"
+    ws[f"B{строка}"] = (f"=CHOOSE('01_Вводные'!$B$194,{продажи})"
+                        f"-SUM('04_Продажи'!$B$15:$BI$15)")
+    ws[f"C{строка}"] = f'=IF(ABS(B{строка})<0.01,"OK","ПРОВЕРИТЬ")'
+    ws[f"D{строка}"] = ("Заменяет сломанный контроль внутри движка: там ссылки "
+                        "разъехались при протяжке и строка сравнивала движок "
+                        "сам с собой.")
+    log.append(f"ПРОВЕРКИ: на 13_Проверки выведены 4 контроля (строки 77–{строка})")
+    return строка
+
+
 def apply_answers(wb, log):
     v = wb["01_Вводные"]
     link_schools_per_partner(wb, log)
+    clean_dead_rows(wb, log)
+    publish_controls(wb, log)
 
     # -- 1. Лагеря выключены по запросу --------------------------------
     for sheet, coord, value, _why in ANSWER_EDITS:
@@ -2015,10 +2101,12 @@ def snapshot(path):
 
 
 def verify(before, after, new_sheets, allowed_new_cells, intentional, log):
-    changed, removed, planned = [], [], []
+    changed, removed, planned, cleaned = [], [], [], []
     for key, val in before.items():
         if key not in after:
-            removed.append(key)
+            # намеренно очищенная ячейка — это тоже правка по запросу,
+            # а не потеря данных
+            (cleaned if key in intentional else removed).append(key)
         elif after[key] != val:
             (planned if key in intentional else changed).append(
                 (key, val, after[key]))
@@ -2034,6 +2122,7 @@ def verify(before, after, new_sheets, allowed_new_cells, intentional, log):
     for key, old, new in planned:
         print(f"    ~ {key[0]}!{key[1]}: {str(old)[:34]} -> {str(new)[:34]}")
     print(f"  НЕзапланированных изменений      : {len(changed)}")
+    print(f"  намеренно очищено (уборка)       : {len(cleaned)}")
     print(f"  удалённых ячеек                  : {len(removed)}")
     print(f"  новых ячеек вне новых листов     : {len(added)}")
     for key, old, new in changed[:20]:
@@ -2117,6 +2206,12 @@ def main():
                     for r in OPENING_ROWS for c in range(2, 68)}
     intentional |= {("06_Сеть_и_дети", f"{get_column_letter(c)}8")
                     for c in range(62, 68)}
+    intentional |= {("19_Расчет_аналитики", f"{get_column_letter(c)}{n + o}")
+                    for n in COPY_STARTS for o in DEAD_OFFSETS
+                    for c in range(1, 68)}
+    for r in range(76, 82):
+        for col in "ABCD":
+            allowed.add(("13_Проверки", f"{col}{r}"))
     for coord in ["E57", "F59", "F76"]:
         allowed.add(("01_Вводные", coord))
     allowed.add(("09_Лагеря", "A2"))
