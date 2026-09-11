@@ -26,7 +26,7 @@ from openpyxl.workbook.defined_name import DefinedName
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT / "tools"))
 import v9_lib as V
-from build_user_friendly import (PL_МЕСЯЦЫ, PL_СТРОКИ,
+from build_user_friendly import (PL_ПО_МЕСЯЦАМ, PL_ПОЛЯ,
                                  РЕЕСТР_ПО_МЕСЯЦАМ)
 from v9_spec import ИМЕНА, ЛИСТЫ
 
@@ -1280,7 +1280,8 @@ def построить_историю(wb, log):
     ws.column_dimensions["D"].width = 26
     ws.column_dimensions["E"].width = 18
     ws.column_dimensions["F"].width = 26
-    ws.column_dimensions["G"].width = 70
+    for c in "GHIJKL":
+        ws.column_dimensions[c].width = 16
 
     стр = ФАКТ_СТРОКИ = _строки_истории(wb)
     В = "'01_Вводные'"
@@ -1403,28 +1404,40 @@ def построить_историю(wb, log):
     ws[f"G{r}"].font = Font(italic=True, size=9, color="595959")
     строка[0] += 3
 
-    заголовок("P&L управляющей компании — месяцы, по которым есть отчёт")
-    шапка("Статья", *[имя for имя, _ in PL_МЕСЯЦЫ], "Средний месяц")
-    первая_pl = _строка_вводных(wb, "P&L: " + PL_СТРОКИ[0][0])
-    for j, (подпись, _) in enumerate(PL_СТРОКИ):
+    заголовок("P&L управляющей компании помесячно — сентябрь 2025 — июль 2026")
+    шапка("Месяц", *PL_ПОЛЯ)
+    первая_pl = _строка_вводных(wb, "Месяц", после="P&L управляющей компании")
+    for j in range(len(PL_ПО_МЕСЯЦАМ)):
         r = строка[0]
-        исх = первая_pl + j
-        ws[f"B{r}"] = подпись
-        for i in range(len(PL_МЕСЯЦЫ)):
+        исх = первая_pl + 1 + j
+        ws[f"B{r}"] = f"={В}!$A${исх}"
+        ws[f"B{r}"].number_format = "mmm yyyy"
+        for i in range(len(PL_ПОЛЯ)):
             c = ws.cell(row=r, column=3 + i)
             c.value = f"={В}!{get_column_letter(2 + i)}${исх}"
             c.number_format = V.ДЕНЬГИ
-        ws[f"E{r}"] = f"=AVERAGE(C{r}:D{r})"
-        ws[f"E{r}"].number_format = V.ДЕНЬГИ
         строка[0] += 1
     r = строка[0]
-    ws[f"B{r}"] = ("Оценка сезона = средний месяц x 11. Так посчитаны строки "
-                   "отчёта выше, помеченные «оценка».")
+    ws[f"B{r}"] = "Итого за 11 месяцев"
+    for i in range(len(PL_ПОЛЯ)):
+        c = get_column_letter(3 + i)
+        cc = ws[f"{c}{r}"]
+        cc.value = f"=SUM({c}{r - len(PL_ПО_МЕСЯЦАМ)}:{c}{r - 1})"
+        cc.number_format = V.ДЕНЬГИ
+    for col in range(2, 3 + len(PL_ПОЛЯ)):
+        ws.cell(row=r, column=col).font = Font(bold=True)
+    строка[0] += 1
+    r = строка[0]
+    ws[f"B{r}"] = ("Август 2025 в отчёте есть, но относится к прошлому "
+                   "сезону. Август 2026 в отчётность ещё не попал — сезон "
+                   "закрыт на одиннадцать месяцев из двенадцати.")
     ws[f"B{r}"].font = Font(italic=True, size=9, color="595959")
-    ws.merge_cells(start_row=r, start_column=2, end_row=r, end_column=7)
+    ws.merge_cells(start_row=r, start_column=2, end_row=r,
+                   end_column=2 + len(PL_ПОЛЯ))
 
-    log.append(f"10_История: P&L сезона 25/26, {len(РЕЕСТР_ПО_МЕСЯЦАМ)} "
-               f"месяцев реестра и {len(PL_МЕСЯЦЫ)} месяца отчёта")
+    log.append(f"10_История: сезон 25/26 фактом — P&L за "
+               f"{len(PL_ПО_МЕСЯЦАМ)} месяцев и {len(РЕЕСТР_ПО_МЕСЯЦАМ)} "
+               f"месяцев реестра")
 
 
 def _строка_вводных(wb, название, после=None):
