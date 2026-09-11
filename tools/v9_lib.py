@@ -38,8 +38,14 @@ WHITE = "FFFFFF"
 
 
 def мес(i):
-    """Буква столбца месяца i (1..60)."""
+    """Буква столбца месяца i (1..60) на новых листах."""
     return L(КОЛ_МЕС1 + i - 1)
+
+
+def тариф(i):
+    """Буква столбца месяца i на перенесённых листах (07_Тарифы): там
+    месяцы начинаются со столбца B, а не с L."""
+    return L(1 + i)
 
 
 def год(y):
@@ -129,7 +135,11 @@ class Лист:
             ш = первый if (i == 1 and первый is not None) else формула
             if ш is None:
                 continue
-            знач = ш.format(м=c, пред=мес(i - 1) if i > 1 else None, i=i, r=r)
+            знач = ш.format(м=c, пред=мес(i - 1) if i > 1 else None,
+                            пред2=мес(i - 2) if i > 2 else None,
+                            пред3=мес(i - 3) if i > 3 else None,
+                            т=тариф(i), тпред=тариф(i - 1) if i > 1 else None,
+                            i=i, r=r)
             ws[f"{c}{r}"] = знач if str(знач).startswith("=") else знач
             ws[f"{c}{r}"].number_format = формат
         # годы и итог
