@@ -17,6 +17,10 @@
   внешняя      ссылка на другой файл
   цикл         ячейка входит в диапазон, который сама же суммирует
   висяк        расчётная ячейка, на которую никто не ссылается
+  локаль       формула, которую Excel разберёт по локали пользователя:
+               дробное число внутри текстового критерия или формата TEXT().
+               Книгу открывают и в русском Excel, и в LibreOffice, и в
+               Google Sheets — считаться должно одинаково везде
 
 Аудит ничего не чинит. Он выдаёт список адресов — решение по каждому
 принимает человек или отдельная правка со своим замером эффекта.
@@ -266,6 +270,74 @@ class Audit:
                 if rec["kind"] == "formula" and "[" in rec["f"]:
                     self.add("внешняя", sname, addr, rec["f"][:110], 1)
 
+    # Формулы, которые Excel разбирает по локали пользователя. Книгу
+    # открывают и в русском Excel, и в английском, и в LibreOffice, и в
+    # Google Sheets — то, что здесь считается верно, там молча даёт другой
+    # ответ. Дефект найден 15.09.2026: COUNTIF(диапазон;">0.01") в русском
+    # Excel вернул 0, и срок закрытия займа показывался как 1 месяц вместо
+    # 36. У нас не проявлялось, потому что пересчёт идёт в LibreOffice.
+    ЛОКАЛЬ_КРИТЕРИЙ = re.compile(r'"[<>=]+\s*\d*[.,]\d+"')
+    ЛОКАЛЬ_ФОРМАТ = re.compile(r'TEXT\s*\([^)]*"[^"]*[#0][.,][#0][^"]*"')
+
+    def check_locale(self):
+        """Дробное число, зашитое в строку формулы, читается по локали.
+
+        Литерал вида «">0.01"» или «TEXT(x;"0.0")» задан в файле с точкой,
+        а разбирается разделителем той локали, в которой открыли книгу, —
+        и в русской молча перестаёт быть числом. Конкатенация «"<"&A1»
+        безопасна: и сборка, и разбор идут в одной локали.
+
+        Чинится одинаково: число должно остаться числом. Вместо
+        COUNTIF(диапазон;">0,01") — SUMPRODUCT(--(диапазон>0,01)); вместо
+        TEXT(x;"0,0") — ROUND(x;1) со склейкой."""
+        for sname, sheet in self.sheets.items():
+            for addr, rec in sheet["cells"].items():
+                if rec["kind"] != "formula":
+                    continue
+                f = rec["f"]
+                if self.ЛОКАЛЬ_КРИТЕРИЙ.search(f):
+                    self.add("локаль", sname, addr,
+                             f"критерий с дробным числом в кавычках — в "
+                             f"другой локали перестанет быть числом: "
+                             f"{f[:100]}", 1)
+                elif self.ЛОКАЛЬ_ФОРМАТ.search(f):
+                    self.add("локаль", sname, addr,
+                             f"TEXT() с десятичным разделителем в формате — "
+                             f"в другой локали даст #ЗНАЧ! или шаблон "
+                             f"текстом: {f[:100]}", 1)
+
+    # Функции, которые одинаково понимают Excel любой версии, LibreOffice
+    # и Google Sheets. Всё, чего здесь нет, — повод проверить вручную:
+    # книга ходит между программами, и новые функции Excel (XLOOKUP, LET,
+    # TEXTJOIN, IFS) в ODS и в старых версиях просто не считаются.
+    ПЕРЕНОСИМЫЕ = {
+        "ABS", "AND", "AVERAGE", "CHAR", "CHOOSE", "COUNT", "COUNTA",
+        "COUNTIF", "DATE", "DAY", "IF", "IFERROR", "INDEX", "INT",
+        "ISNUMBER", "LEFT", "LEN", "MATCH", "MAX", "MID", "MIN", "MOD",
+        "MONTH", "NOT", "OR", "RIGHT", "ROUND", "ROUNDDOWN", "ROUNDUP",
+        "SUM", "SUMIF", "SUMIFS", "SUMPRODUCT", "TEXT", "TRIM", "TRUE",
+        "FALSE", "VALUE", "YEAR",
+    }
+    ФУНКЦИЯ = re.compile(r"\b([A-Z][A-Z0-9.]{1,20})\s*\(")
+
+    def check_functions(self):
+        """Функция вне списка переносимых — риск при открытии в другой
+        программе."""
+        чужие = defaultdict(list)
+        for sname, sheet in self.sheets.items():
+            for addr, rec in sheet["cells"].items():
+                if rec["kind"] != "formula":
+                    continue
+                for имя in self.ФУНКЦИЯ.findall(rec["f"]):
+                    if имя not in self.ПЕРЕНОСИМЫЕ:
+                        чужие[имя].append((sname, addr))
+        for имя, места in sorted(чужие.items(), key=lambda kv: -len(kv[1])):
+            s0, a0 = места[0]
+            self.add("локаль", s0, a0,
+                     f"функция {имя}() вне списка переносимых, "
+                     f"{len(места)} вхождений — проверьте, считается ли она "
+                     f"в LibreOffice и Google Sheets", 2)
+
     def check_selfsum(self):
         for sname, sheet in self.sheets.items():
             for addr, rec in sheet["cells"].items():
@@ -341,6 +413,7 @@ class Audit:
             "внешняя": self.check_external,
             "цикл": self.check_selfsum,
             "висяк": self.check_orphans,
+            "локаль": lambda: (self.check_locale(), self.check_functions()),
         }
         for name, fn in all_checks.items():
             if kinds and name not in kinds:
